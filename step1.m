@@ -127,18 +127,16 @@ accel_high = accel_est + z90*sigma_accel;
 % 1 = long
 % 0 = cash
 %
-% Buy rule is stricter.
-% Sell rule uses a negative buffer to avoid selling on tiny trend noise.
+% Buy rule is strict or semi-strict depending on selected condition.
+% Sell rule requires the trend confidence interval to be fully negative.
 
 position = zeros(N,1);
 
-buyConfirmDays  = 10;
+buyConfirmDays  = 5;
 sellConfirmDays = 5;
 
-sellBuffer = -0.0005;   % negative trend threshold
-
-buySignal  = trend_low > 0;
-sellSignal = trend_est < sellBuffer;
+buySignal  = trend_est > 0;
+sellSignal = trend_high < 0;
 
 buyCount = 0;
 sellCount = 0;
