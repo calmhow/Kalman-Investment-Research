@@ -123,44 +123,45 @@ trend_high = trend_est + z90*sigma_trend;
 accel_low  = accel_est - z90*sigma_accel;
 accel_high = accel_est + z90*sigma_accel;
 
-%% ---------------- Improved Signal Logic ----------------
+%% ---------------- Improved Asymmetric Signal Logic ----------------
 % 1 = long
 % 0 = cash
 %
-% Requires trend confidence to stay positive/negative for several days
-% before changing position.
+% Buy rule is stricter.
+% Sell rule is faster.
 
 position = zeros(N,1);
 
-confirmDays = 10;   % Require n consecutive days before switching
+buyConfirmDays  = 10;
+sellConfirmDays = 5;
 
-longSignal = trend_low > 0;
-cashSignal = trend_high < 0;
+buySignal  = trend_low > 0;
+sellSignal = trend_est < 0;
 
-longCount = 0;
-cashCount = 0;
+buyCount = 0;
+sellCount = 0;
 
 for k = 2:N
 
-    if longSignal(k)
-        longCount = longCount + 1;
+    if buySignal(k)
+        buyCount = buyCount + 1;
     else
-        longCount = 0;
+        buyCount = 0;
     end
 
-    if cashSignal(k)
-        cashCount = cashCount + 1;
+    if sellSignal(k)
+        sellCount = sellCount + 1;
     else
-        cashCount = 0;
+        sellCount = 0;
     end
 
     % Default: hold previous position
     position(k) = position(k-1);
 
     % Switch only after confirmation
-    if longCount >= confirmDays
+    if buyCount >= buyConfirmDays
         position(k) = 1;
-    elseif cashCount >= confirmDays
+    elseif sellCount >= sellConfirmDays
         position(k) = 0;
     end
 end
@@ -186,6 +187,37 @@ sellCount = sum(action == "Sell");
 
 fprintf("Buy count: %d\n", buyCount);
 fprintf("Sell count: %d\n", sellCount);
+
+%% ---------------- Basic Backtest Diagnostics ----------------
+% Uses yesterday's position for today's return to avoid look-ahead bias.
+
+dailyReturn = [0; diff(price)./price(1:end-1)];
+
+% Position must be lagged by one day
+strategyReturn = [0; position(1:end-1) .* dailyReturn(2:end)];
+
+% Simple transaction cost model
+transactionCost = 0.001;   % 0.1% per trade
+trades = [0; abs(diff(position))];
+
+strategyReturnNet = strategyReturn - transactionCost * trades;
+
+buyHoldEquity = cumprod(1 + dailyReturn);
+strategyEquity = cumprod(1 + strategyReturnNet);
+
+totalReturnStrategy = strategyEquity(end) - 1;
+totalReturnBuyHold = buyHoldEquity(end) - 1;
+
+runningMax = cummax(strategyEquity);
+drawdown = strategyEquity ./ runningMax - 1;
+maxDrawdown = min(drawdown);
+
+sharpeApprox = sqrt(252) * mean(strategyReturnNet) / std(strategyReturnNet);
+
+fprintf("Strategy total return: %.2f%%\n", 100*totalReturnStrategy);
+fprintf("Buy-hold total return: %.2f%%\n", 100*totalReturnBuyHold);
+fprintf("Strategy max drawdown: %.2f%%\n", 100*maxDrawdown);
+fprintf("Approx. Sharpe ratio: %.2f\n", sharpeApprox);
 
 %% ---------------- Signal Diagnostics ----------------
 tradeCount = sum(abs(diff(position)) > 0);
@@ -265,6 +297,18 @@ xlabel("Date");
 title("Preliminary Trend-Based Position Signal");
 
 legend([hPrice, hPosition], {'Price', 'Position'}, 'Location', 'best');
+
+%% ---------------- Plot 6: Strategy vs Buy-and-Hold ----------------
+figure;
+hold on; grid on;
+
+plot(dates, buyHoldEquity, 'k', 'LineWidth', 1.2);
+plot(dates, strategyEquity, 'b', 'LineWidth', 1.5);
+
+xlabel("Date");
+ylabel("Growth of $1");
+title("Kalman Strategy vs Buy-and-Hold");
+legend("Buy and Hold", "Kalman Strategy", "Location", "best");
 
 %% ---------------- Output Summary ----------------
 results = table(dates, price, price_est, trend_est, trend_low, trend_high, ...
