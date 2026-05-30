@@ -133,7 +133,7 @@ accel_high = accel_est + z90*sigma_accel;
 position = zeros(N,1);
 
 buyConfirmDays  = 5;
-sellConfirmDays = 5;
+sellConfirmDays = 8; % or 7 for 
 
 buySignal  = trend_est > 0;
 sellSignal = trend_high < 0;
@@ -224,12 +224,19 @@ runningMax = cummax(strategyEquity);
 drawdown = strategyEquity ./ runningMax - 1;
 maxDrawdown = min(drawdown);
 
-sharpeApprox = sqrt(252) * mean(strategyReturnNet) / std(strategyReturnNet);
+buyHoldRunningMax = cummax(buyHoldEquity);
+buyHoldDrawdown = buyHoldEquity ./ buyHoldRunningMax - 1;
+buyHoldMaxDrawdown = min(buyHoldDrawdown);
+
+StrategysharpeApprox = sqrt(252) * mean(strategyReturnNet) / std(strategyReturnNet);
+buyHoldSharpeApprox = sqrt(252) * mean(dailyReturn) / std(dailyReturn);
 
 fprintf("Strategy total return: %.2f%%\n", 100*totalReturnStrategy);
 fprintf("Buy-hold total return: %.2f%%\n", 100*totalReturnBuyHold);
 fprintf("Strategy max drawdown: %.2f%%\n", 100*maxDrawdown);
-fprintf("Approx. Sharpe ratio: %.2f\n", sharpeApprox);
+fprintf("Buy-hold max drawdown: %.2f%%\n", 100*buyHoldMaxDrawdown);
+fprintf("Strategy Approx. Sharpe ratio: %.2f\n", StrategysharpeApprox);
+fprintf("Buy-hold Approx. Sharpe ratio: %.2f\n", buyHoldSharpeApprox);
 
 %% ---------------- Signal Diagnostics ----------------
 tradeCount = sum(abs(diff(position)) > 0);
