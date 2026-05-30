@@ -123,24 +123,45 @@ trend_high = trend_est + z90*sigma_trend;
 accel_low  = accel_est - z90*sigma_accel;
 accel_high = accel_est + z90*sigma_accel;
 
-%% ---------------- Simple Signal Logic ----------------
+%% ---------------- Improved Signal Logic ----------------
 % 1 = long
 % 0 = cash
 %
-% Rule:
-% If lower trend confidence bound > 0, trend is confidently positive.
-% If upper trend confidence bound < 0, trend is confidently negative.
-% Otherwise, hold previous position.
+% Requires trend confidence to stay positive/negative for several days
+% before changing position.
 
 position = zeros(N,1);
 
+confirmDays = 5;   % Require 5 consecutive days before switching
+
+longSignal = trend_low > 0;
+cashSignal = trend_high < 0;
+
+longCount = 0;
+cashCount = 0;
+
 for k = 2:N
-    if trend_low(k) > 0
-        position(k) = 1;
-    elseif trend_high(k) < 0
-        position(k) = 0;
+
+    if longSignal(k)
+        longCount = longCount + 1;
     else
-        position(k) = position(k-1);
+        longCount = 0;
+    end
+
+    if cashSignal(k)
+        cashCount = cashCount + 1;
+    else
+        cashCount = 0;
+    end
+
+    % Default: hold previous position
+    position(k) = position(k-1);
+
+    % Switch only after confirmation
+    if longCount >= confirmDays
+        position(k) = 1;
+    elseif cashCount >= confirmDays
+        position(k) = 0;
     end
 end
 
