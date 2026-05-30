@@ -132,7 +132,7 @@ accel_high = accel_est + z90*sigma_accel;
 
 position = zeros(N,1);
 
-confirmDays = 5;   % Require 5 consecutive days before switching
+confirmDays = 10;   % Require n consecutive days before switching
 
 longSignal = trend_low > 0;
 cashSignal = trend_high < 0;
@@ -165,6 +165,28 @@ for k = 2:N
     end
 end
 
+%% ---------------- Buy/Sell Action Labels ----------------
+action = strings(N,1);
+action(:) = "Hold";
+
+for k = 2:N
+    if position(k-1) == 0 && position(k) == 1
+        action(k) = "Buy";
+    elseif position(k-1) == 1 && position(k) == 0
+        action(k) = "Sell";
+    elseif position(k) == 1
+        action(k) = "Hold Long";
+    else
+        action(k) = "Hold Cash";
+    end
+end
+
+buyCount = sum(action == "Buy");
+sellCount = sum(action == "Sell");
+
+fprintf("Buy count: %d\n", buyCount);
+fprintf("Sell count: %d\n", sellCount);
+
 %% ---------------- Signal Diagnostics ----------------
 tradeCount = sum(abs(diff(position)) > 0);
 timeInMarket = mean(position);
@@ -173,22 +195,22 @@ fprintf("Trade count: %d\n", tradeCount);
 fprintf("Time in market: %.2f%%\n", 100*timeInMarket);
 
 %% ---------------- Plot 1: Price Estimate ----------------
+buyIdx = action == "Buy";
+sellIdx = action == "Sell";
+
 figure;
 hold on; grid on;
-
-fill([dates; flipud(dates)], ...
-     [price_low; flipud(price_high)], ...
-     [0.85 0.85 0.85], ...
-     'EdgeColor', 'none', ...
-     'FaceAlpha', 0.5);
 
 plot(dates, price, 'k', 'LineWidth', 1.0);
 plot(dates, price_est, 'r', 'LineWidth', 1.5);
 
+scatter(dates(buyIdx), price(buyIdx), 60, '^', 'filled');
+scatter(dates(sellIdx), price(sellIdx), 60, 'v', 'filled');
+
 xlabel("Date");
 ylabel("Price");
-title("Kalman Filter Price Estimate with 90% Confidence Interval");
-legend("90% CI", "Observed Price", "Filtered Price", "Location", "best");
+title("Kalman Trend Buy/Sell Signals");
+legend("Observed Price", "Filtered Price", "Buy", "Sell", "Location", "best");
 
 %% ---------------- Plot 2: Trend Estimate ----------------
 figure;
@@ -246,9 +268,12 @@ legend([hPrice, hPosition], {'Price', 'Position'}, 'Location', 'best');
 
 %% ---------------- Output Summary ----------------
 results = table(dates, price, price_est, trend_est, trend_low, trend_high, ...
-    accel_est, accel_low, accel_high, position, ...
+    accel_est, accel_low, accel_high, position, action, ...
     'VariableNames', ["Date", "Price", "FilteredPrice", ...
     "Trend", "TrendLow90", "TrendHigh90", ...
-    "Acceleration", "AccelLow90", "AccelHigh90", "Position"]);
+    "Acceleration", "AccelLow90", "AccelHigh90", ...
+    "Position", "Action"]);
 
 disp(results(end-10:end,:));
+
+% close all %temp
