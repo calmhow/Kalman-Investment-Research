@@ -165,6 +165,13 @@ for k = 2:N
     end
 end
 
+%% ---------------- Signal Diagnostics ----------------
+tradeCount = sum(abs(diff(position)) > 0);
+timeInMarket = mean(position);
+
+fprintf("Trade count: %d\n", tradeCount);
+fprintf("Time in market: %.2f%%\n", 100*timeInMarket);
+
 %% ---------------- Plot 1: Price Estimate ----------------
 figure;
 hold on; grid on;
