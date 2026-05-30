@@ -227,6 +227,24 @@ fprintf("Trade count: %d\n", tradeCount);
 fprintf("Time in market: %.2f%%\n", 100*timeInMarket);
 
 %% ---------------- Plot 1: Price Estimate ----------------
+figure;
+hold on; grid on;
+
+fill([dates; flipud(dates)], ...
+     [price_low; flipud(price_high)], ...
+     [0.85 0.85 0.85], ...
+     'EdgeColor', 'none', ...
+     'FaceAlpha', 0.5);
+
+plot(dates, price, 'k', 'LineWidth', 1.0);
+plot(dates, price_est, 'r', 'LineWidth', 1.5);
+
+xlabel("Date");
+ylabel("Price");
+title("Kalman Filter Price Estimate with 90% Confidence Interval");
+legend("90% CI", "Observed Price", "Filtered Price", "Location", "best");
+
+%% ---------------- Plot 2: Buy/sell marker plot ----------------
 buyIdx = action == "Buy";
 sellIdx = action == "Sell";
 
@@ -244,7 +262,8 @@ ylabel("Price");
 title("Kalman Trend Buy/Sell Signals");
 legend("Observed Price", "Filtered Price", "Buy", "Sell", "Location", "best");
 
-%% ---------------- Plot 2: Trend Estimate ----------------
+
+%% ---------------- Plot 3: Trend Estimate ----------------
 figure;
 hold on; grid on;
 
@@ -262,7 +281,7 @@ ylabel("Trend Estimate");
 title("Estimated Log-Price Trend with 90% Confidence Interval");
 legend("90% CI", "Trend", "Zero Line", "Location", "best");
 
-%% ---------------- Plot 3: Acceleration Estimate ----------------
+%% ---------------- Plot 4: Acceleration Estimate ----------------
 figure;
 hold on; grid on;
 
@@ -280,7 +299,7 @@ ylabel("Acceleration Estimate");
 title("Estimated Log-Price Acceleration with 90% Confidence Interval");
 legend("90% CI", "Acceleration", "Zero Line", "Location", "best");
 
-%% ---------------- Plot 4: Position Signal ----------------
+%% ---------------- Plot 5: Position Signal ----------------
 figure;
 hold on; grid on;
 
