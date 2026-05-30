@@ -13,7 +13,7 @@ dt = 1;                  % 1 trading day
 
 % Tuning parameters
 q_jerk = 1e-7;            % Process noise strength
-r_meas = 7.5e-4; % 5e-4 is current strongest candiate
+r_meas = 5e-4; % 5e-4 is current strongest candiate
 
 % Confidence level
 z90 = 1.64485;            % 90% two-sided confidence interval
