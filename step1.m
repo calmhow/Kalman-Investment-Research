@@ -128,41 +128,55 @@ accel_high = accel_est + z90*sigma_accel;
 % 0 = cash
 %
 % Buy rule is stricter.
-% Sell rule is faster.
+% Sell rule uses a negative buffer to avoid selling on tiny trend noise.
 
 position = zeros(N,1);
 
 buyConfirmDays  = 10;
 sellConfirmDays = 5;
 
+sellBuffer = -0.0005;   % negative trend threshold
+
 buySignal  = trend_low > 0;
-sellSignal = trend_est < 0;
+sellSignal = trend_est < sellBuffer;
 
 buyCount = 0;
 sellCount = 0;
 
 for k = 2:N
 
-    if buySignal(k)
-        buyCount = buyCount + 1;
-    else
-        buyCount = 0;
-    end
-
-    if sellSignal(k)
-        sellCount = sellCount + 1;
-    else
-        sellCount = 0;
-    end
-
     % Default: hold previous position
     position(k) = position(k-1);
 
-    % Switch only after confirmation
-    if buyCount >= buyConfirmDays
-        position(k) = 1;
-    elseif sellCount >= sellConfirmDays
-        position(k) = 0;
+    if position(k-1) == 0
+        % We are in cash, so only look for buy confirmation
+        if buySignal(k)
+            buyCount = buyCount + 1;
+        else
+            buyCount = 0;
+        end
+
+        sellCount = 0;
+
+        if buyCount >= buyConfirmDays
+            position(k) = 1;
+            buyCount = 0;
+        end
+
+    elseif position(k-1) == 1
+        % We are long, so only look for sell confirmation
+        if sellSignal(k)
+            sellCount = sellCount + 1;
+        else
+            sellCount = 0;
+        end
+
+        buyCount = 0;
+
+        if sellCount >= sellConfirmDays
+            position(k) = 0;
+            sellCount = 0;
+        end
     end
 end
 
