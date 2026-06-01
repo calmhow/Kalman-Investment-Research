@@ -1,5 +1,6 @@
 %% runBatchKalmanTests.m
 % Batch runner for Kalman trend model across multiple tickers.
+% data for any specific ticker must be included in the data folder
 
 clear; clc; close all;
 
@@ -34,7 +35,7 @@ summaryRows = table();
 
     fprintf("Running %s...\n", ticker);
 
-    [results, summary] = runKalmanTrendModel(filename, params);
+    [results, summary] = runKalmanTrendModel_partialExposure(filename, params);
 
     newRow = table( ...
         ticker, ...
@@ -90,7 +91,7 @@ if ~isfolder("results")
     mkdir("results");
 end
 
-outFile = "results/batch_kalman_summary.xlsx";
+outFile = "results/batchruns/batch_kalman_summary.xlsx";
 writetable(summaryRows, outFile);
 
 fprintf("\nBatch summary saved to: %s\n", outFile);
