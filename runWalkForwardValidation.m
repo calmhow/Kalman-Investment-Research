@@ -12,7 +12,7 @@
 clear; clc; close all;
 
 %% ---------------- User Inputs ----------------
-ticker = "SPYG";
+ticker = "QQQ";
 filename = "data/" + ticker + ".csv";
 
 %% ---------------- Fixed Baseline Parameters ----------------

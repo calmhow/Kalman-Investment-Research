@@ -27,7 +27,7 @@ function [results, summary, figs] = runKalmanTrendModel_partialExposure(filename
 %
 % Partial-exposure strategy:
 %   exposure scales the baseline position rather than replacing it.
-%   Current version uses late-stage sell-pressure de-risking with hysteresis.
+%   Current version uses softened late-stage sell-pressure de-risking with hysteresis.
 
     %% ---------------- Default Parameters ----------------
     if nargin < 2 || isempty(params)
@@ -51,19 +51,19 @@ function [results, summary, figs] = runKalmanTrendModel_partialExposure(filename
     % Baseline 0/1 position logic is left unchanged.
     % Partial exposure is calculated separately for comparison.
     %
-    % Late-stage sell-pressure de-risking:
+    % Softened late-stage sell-pressure de-risking:
     %   The baseline 0/1 model decides whether the strategy is long or cash.
-    %   Exposure stays fully long during weak/early sell pressure.
-    %   Exposure only scales down when the baseline sell condition is close
-    %   to confirmation.
+    %   Exposure stays fully long until sell pressure is very close to
+    %   confirmation. This is less defensive than the previous exposure
+    %   overlay and is intended to reduce return drag.
     params = setDefault(params, "runPartialExposure", true);
-    params = setDefault(params, "exposureNoSellPressure", 1.00);       % baseline long, no active sell pressure
-    params = setDefault(params, "exposureLowSellPressure", 1.00);      % early sell pressure; stay fully invested
-    params = setDefault(params, "exposureMediumSellPressure", 0.75);   % late-stage sell pressure
-    params = setDefault(params, "exposureHighSellPressure", 0.50);     % very late-stage sell pressure, but not full exit yet
+    params = setDefault(params, "exposureNoSellPressure", 1.00);       % baseline long, sellPressure < low threshold
+    params = setDefault(params, "exposureLowSellPressure", 1.00);      % retained for compatibility; not used by current logic
+    params = setDefault(params, "exposureMediumSellPressure", 0.90);   % very late-stage sell pressure
+    params = setDefault(params, "exposureHighSellPressure", 0.75);     % final warning stage before full baseline exit
     params = setDefault(params, "exposureCash", 0.00);                % baseline cash
-    params = setDefault(params, "sellPressureLowThreshold", 0.50);
-    params = setDefault(params, "sellPressureHighThreshold", 0.75);
+    params = setDefault(params, "sellPressureLowThreshold", 0.75);
+    params = setDefault(params, "sellPressureHighThreshold", 0.875);
 
     % Exposure hysteresis:
     %   Risk-down moves happen immediately.
@@ -295,17 +295,20 @@ function [results, summary, figs] = runKalmanTrendModel_partialExposure(filename
     %% ---------------- Partial Exposure Logic ----------------
     % This branch does NOT replace the baseline position model.
     %
-    % Late-stage sell-pressure de-risking with hysteresis:
+    % Softened late-stage sell-pressure de-risking with hysteresis:
     %   - If the baseline is cash, exposure is 0.
-    %   - If the baseline is long and sell pressure is weak, target exposure is 1.
-    %   - Exposure only scales down once sell pressure reaches the late-stage
-    %     threshold.
+    %   - If the baseline is long and sell pressure is below the low threshold,
+    %     target exposure stays at 1.
+    %   - Exposure only scales down near the final stages of a confirmed
+    %     baseline sell.
     %   - Risk-down moves happen immediately.
     %   - Risk-up moves are delayed until sell pressure has been zero for
     %     exposureRestoreConfirmDays consecutive days.
     %
-    % This is designed to reduce exposure churn such as:
-    %   1.00 -> 0.75 -> 1.00 -> 0.75
+    % Default mapping:
+    %   sellPressure < 0.75   -> target exposure = 1.00
+    %   0.75 <= sellPressure < 0.875 -> target exposure = 0.90
+    %   sellPressure >= 0.875 -> target exposure = 0.75
 
     exposure = zeros(N,1);
     targetExposure = zeros(N,1);
@@ -516,6 +519,11 @@ function [results, summary, figs] = runKalmanTrendModel_partialExposure(filename
     summary.maxSellPressure = max(sellPressure);
     summary.useExposureHysteresis = params.useExposureHysteresis;
     summary.exposureRestoreConfirmDays = params.exposureRestoreConfirmDays;
+    summary.sellPressureLowThreshold = params.sellPressureLowThreshold;
+    summary.sellPressureHighThreshold = params.sellPressureHighThreshold;
+    summary.exposureNoSellPressure = params.exposureNoSellPressure;
+    summary.exposureMediumSellPressure = params.exposureMediumSellPressure;
+    summary.exposureHighSellPressure = params.exposureHighSellPressure;
     summary.exposureTargetAdjustmentCount = sum(abs(diff(targetExposure)) > 0);
     summary.exposureHysteresisDelayCount = sum(abs(targetExposure - exposure) > 0);
 
@@ -563,6 +571,8 @@ function [results, summary, figs] = runKalmanTrendModel_partialExposure(filename
             fprintf("Max sell pressure: %.2f\n", max(sellPressure));
             fprintf("Use exposure hysteresis: %d\n", params.useExposureHysteresis);
             fprintf("Exposure restore confirm days: %d\n", params.exposureRestoreConfirmDays);
+            fprintf("Sell pressure low threshold: %.3f\n", params.sellPressureLowThreshold);
+            fprintf("Sell pressure high threshold: %.3f\n", params.sellPressureHighThreshold);
             fprintf("Exposure target adjustment count: %d\n", sum(abs(diff(targetExposure)) > 0));
             fprintf("Exposure hysteresis delay count: %d\n", sum(abs(targetExposure - exposure) > 0));
 
@@ -654,7 +664,7 @@ function [results, summary, figs] = runKalmanTrendModel_partialExposure(filename
             ylim([-0.1 1.1]);
 
             xlabel("Date");
-            title(tickerLabel + " - Late-Stage Sell-Pressure Partial Exposure with Hysteresis");
+            title(tickerLabel + " - Softened Late-Stage Partial Exposure with Hysteresis");
 
             legend([hPrice2, hExposure], {'Price', 'Exposure'}, 'Location', 'best');
         end
