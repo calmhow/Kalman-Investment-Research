@@ -14,7 +14,7 @@ params = struct();
 
 % Current shared ETF baseline
 params.q_jerk = 1e-7;
-params.r_meas = 5e-4;
+params.r_meas = 1e-3;
 
 params.buyConfirmDays = 5;
 params.sellConfirmDays = 8;
@@ -143,7 +143,7 @@ if ~isfolder("results/batchruns")
     mkdir("results/batchruns");
 end
 
-outFile = "results/batchruns/batch_kalman_summary.xlsx";
+outFile = "results/batchruns/new_batch_kalman_summary.xlsx";
 writetable(summaryRows, outFile);
 
 fprintf("\nBatch summary saved to: %s\n", outFile);

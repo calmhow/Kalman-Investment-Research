@@ -19,12 +19,17 @@ filename = "data/" + ticker + ".csv";
 params = struct();
 
 params.q_jerk = 1e-7;
-params.r_meas = 5e-4;
+params.r_meas = 1e-3;
 
 params.buyConfirmDays = 5;
 params.sellConfirmDays = 8;
 
 params.transactionCost = 0.001;
+
+jerk=string(params.q_jerk);
+meas=string(params.r_meas);
+buydays=string(params.buyConfirmDays);
+selldays=string(params.sellConfirmDays);
 
 params.makePlots = false;
 params.showStatePlots = false;   % price CI, trend CI, acceleration CI
@@ -57,7 +62,7 @@ for i = 1:length(testYears)
     params.startDate = warmupStart;
     params.endDate   = testEnd;
 
-    [results, summary] = runKalmanTrendModel_partialExposure(filename, params); %#ok<ASGLU>
+    [results, summary] = runKalmanTrendModel_partialExposure(filename, params); 
 
     yearSummary = summarizeBacktestPeriod(results, testStart, testEnd);
 
@@ -90,6 +95,10 @@ for i = 1:length(testYears)
         100*yearSummary.exposureTimeInMarket, ...
         100*yearSummary.exposureAverage, ...
         yearSummary.exposureTurnoverTotal, ...
+        yearSummary.exposureTargetAdjustmentCount, ...
+        yearSummary.exposureHysteresisDelayCount, ...
+        yearSummary.maxSellPressure, ...
+        yearSummary.avgSellPressureWhileLong, ...
         100*yearSummary.buyHoldExcessReturn, ...
         100*yearSummary.baselineExcessReturn, ...
         100*yearSummary.exposureExcessReturn, ...
@@ -128,6 +137,10 @@ for i = 1:length(testYears)
         "ExposureTimeInMarketPct", ...
         "ExposureAveragePct", ...
         "ExposureTurnoverTotal", ...
+        "ExposureTargetAdjustmentCount", ...
+        "ExposureHysteresisDelayCount", ...
+        "MaxSellPressure", ...
+        "AvgSellPressureWhileLong", ...
         "BuyHoldExcessReturnPct", ...
         "BaselineExcessReturnPct", ...
         "ExposureExcessReturnPct", ...
@@ -153,7 +166,12 @@ if ~isfolder("results/walkforward")
     mkdir("results/walkforward");
 end
 
-outFile = "results/walkforward/walk_forward_" + ticker + ".xlsx";
+tickerOutDir = "results/walkforward/" + ticker;
+if ~isfolder(tickerOutDir)
+    mkdir(tickerOutDir);
+end
+
+outFile = tickerOutDir + "/wf_" + ticker + "_"+ jerk +"_" + meas + "_"+ selldays +"_" + buydays + ".xlsx";
 writetable(walkForwardSummary, outFile);
 
 fprintf("\nWalk-forward summary saved to: %s\n", outFile);
@@ -174,6 +192,23 @@ function periodSummary = summarizeBacktestPeriod(results, startDate, endDate)
     position = results.Position(mask);
     action = results.Action(mask);
     exposure = results.Exposure(mask);
+
+    % Optional exposure diagnostics from newer partial-exposure model versions.
+    if ismember("SellPressure", results.Properties.VariableNames)
+        sellPressure = results.SellPressure(mask);
+    else
+        sellPressure = zeros(sum(mask),1);
+    end
+
+    if ismember("TargetExposure", results.Properties.VariableNames)
+        targetExposure = results.TargetExposure(mask);
+    else
+        targetExposure = exposure;
+    end
+
+    if ismember("ZeroSellPressureCounter", results.Properties.VariableNames)
+        zeroSellPressureCounter = results.ZeroSellPressureCounter(mask); %#ok<NASGU>
+    end
 
     buyHoldEquity = cumprod(1 + dailyReturn);
     baselineEquity = cumprod(1 + baselineReturnNet);
@@ -229,6 +264,17 @@ function periodSummary = summarizeBacktestPeriod(results, startDate, endDate)
     periodSummary.exposureTimeInMarket = mean(exposure > 0);
     periodSummary.exposureAverage = mean(exposure);
     periodSummary.exposureTurnoverTotal = sum([0; abs(diff(exposure))]);
+
+    % Extra exposure diagnostics.
+    periodSummary.exposureTargetAdjustmentCount = sum(abs(diff(targetExposure)) > 0);
+    periodSummary.exposureHysteresisDelayCount = sum(abs(targetExposure - exposure) > 0);
+    periodSummary.maxSellPressure = max(sellPressure);
+
+    if any(position == 1)
+        periodSummary.avgSellPressureWhileLong = mean(sellPressure(position == 1), "omitnan");
+    else
+        periodSummary.avgSellPressureWhileLong = NaN;
+    end
 
     periodSummary.buyHoldExcessReturn = 0;
     periodSummary.baselineExcessReturn = baselineTotalReturn - buyHoldTotalReturn;
