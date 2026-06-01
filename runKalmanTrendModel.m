@@ -11,11 +11,15 @@ function [results, summary, figs] = runKalmanTrendModel(filename, params)
 % Example:
 %   [results, summary, figs] = runKalmanTrendModel("data/SPY.csv");
 %
-% Example with overrides:
+% Quiet example:
 %   params = struct();
-%   params.r_meas = 7.5e-4;
 %   params.makePlots = false;
-%   [results, summary] = runKalmanTrendModel("data/QQQ.csv", params);
+%   params.printSummary = false;
+%   [results, summary] = runKalmanTrendModel("data/SPY.csv", params);
+%
+% Optional plot control:
+%   params.makePlots = true/false;       % master plot switch
+%   params.showStatePlots = true/false;  % price CI, trend CI, acceleration CI
 %
 % State:
 %   x = [log_price; trend; acceleration]
@@ -41,6 +45,7 @@ function [results, summary, figs] = runKalmanTrendModel(filename, params)
     params = setDefault(params, "sellConfirmDays", 8);
     params = setDefault(params, "transactionCost", 0.001);    % 0.1% per trade
     params = setDefault(params, "makePlots", true);
+    params = setDefault(params, "showStatePlots", false);     % price CI, trend CI, acceleration CI
     params = setDefault(params, "printSummary", true);
     params = setDefault(params, "startDate", []);
     params = setDefault(params, "endDate", []);
@@ -50,10 +55,13 @@ function [results, summary, figs] = runKalmanTrendModel(filename, params)
     r_meas = params.r_meas;
     zCI = params.zCI;
 
+    % Ticker label for plot titles
+    [~, tickerLabel, ~] = fileparts(char(filename));
+    tickerLabel = upper(string(tickerLabel));
+
     %% ---------------- Load Data ----------------
     T = readtable(filename);
 
-    % Convert date column if needed
     if ismember("Date", T.Properties.VariableNames)
         dates = T.Date;
 
@@ -68,7 +76,6 @@ function [results, summary, figs] = runKalmanTrendModel(filename, params)
         dates = (1:height(T))';
     end
 
-    % Use adjusted close if available, otherwise close
     if ismember("AdjClose", T.Properties.VariableNames)
         price = T.AdjClose;
     elseif ismember("Adj_Close", T.Properties.VariableNames)
@@ -83,16 +90,13 @@ function [results, summary, figs] = runKalmanTrendModel(filename, params)
         error("CSV must contain AdjClose, Adj_Close, AdjustedClose, Close, or close.");
     end
 
-    % Clean missing or invalid prices
     valid = ~isnan(price) & price > 0;
     price = price(valid);
     dates = dates(valid);
 
-    % Sort oldest to newest
     [dates, sortIdx] = sort(dates);
     price = price(sortIdx);
 
-    % Optional date filter
     if ~isempty(params.startDate)
         startDate = datetime(params.startDate);
         keep = dates >= startDate;
@@ -121,7 +125,6 @@ function [results, summary, figs] = runKalmanTrendModel(filename, params)
 
     H = [1, 0, 0];
 
-    % Random jerk process noise model
     G = [dt^3/6;
          dt^2/2;
          dt];
@@ -142,22 +145,16 @@ function [results, summary, figs] = runKalmanTrendModel(filename, params)
 
     %% ---------------- Kalman Filter Loop ----------------
     for k = 2:N
-
-        % Predict
         x_pred = F * xhat(:,k-1);
         P_pred = F * P * F' + Q;
 
-        % Innovation
         innovation = z(k) - H * x_pred;
         S = H * P_pred * H' + R;
 
-        % Kalman gain
         K = P_pred * H' / S;
 
-        % Update
         xhat(:,k) = x_pred + K * innovation;
 
-        % Joseph covariance update for numerical stability
         I = eye(n);
         P = (I - K*H) * P_pred * (I - K*H)' + K * R * K';
 
@@ -187,11 +184,7 @@ function [results, summary, figs] = runKalmanTrendModel(filename, params)
     accel_low  = accel_est - zCI*sigma_accel;
     accel_high = accel_est + zCI*sigma_accel;
 
-    %% ---------------- Signal Logic ----------------
-    % Current baseline:
-    %   buySignal  = trend_est > 0
-    %   sellSignal = trend_high < 0
-
+    %% ---------------- Baseline Signal Logic ----------------
     position = zeros(N,1);
 
     buySignal  = trend_est > 0;
@@ -201,13 +194,9 @@ function [results, summary, figs] = runKalmanTrendModel(filename, params)
     sellCounter = 0;
 
     for k = 2:N
-
-        % Default: hold previous position
         position(k) = position(k-1);
 
         if position(k-1) == 0
-
-            % In cash, only look for buy confirmation
             if buySignal(k)
                 buyCounter = buyCounter + 1;
             else
@@ -222,8 +211,6 @@ function [results, summary, figs] = runKalmanTrendModel(filename, params)
             end
 
         elseif position(k-1) == 1
-
-            % Long, only look for sell confirmation
             if sellSignal(k)
                 sellCounter = sellCounter + 1;
             else
@@ -259,15 +246,10 @@ function [results, summary, figs] = runKalmanTrendModel(filename, params)
     sellCount = sum(action == "Sell");
 
     %% ---------------- Backtest Diagnostics ----------------
-    % Uses yesterday's position for today's return to avoid look-ahead bias.
-
     dailyReturn = [0; price(2:end)./price(1:end-1) - 1];
 
-    % Position must be lagged by one day
     strategyReturn = [0; position(1:end-1) .* dailyReturn(2:end)];
-
     trades = [0; abs(diff(position))];
-
     strategyReturnNet = strategyReturn - params.transactionCost * trades;
 
     buyHoldEquity = cumprod(1 + dailyReturn);
@@ -289,6 +271,10 @@ function [results, summary, figs] = runKalmanTrendModel(filename, params)
 
     tradeCount = sum(abs(diff(position)) > 0);
     timeInMarket = mean(position);
+
+    baselineExcessReturn = totalReturnStrategy - totalReturnBuyHold;
+    baselineDrawdownImprovement = maxDrawdown - buyHoldMaxDrawdown;
+    baselineSharpeImprovement = strategySharpeApprox - buyHoldSharpeApprox;
 
     %% ---------------- Output Tables/Structs ----------------
     results = table(dates, price, price_est, price_low, price_high, ...
@@ -314,17 +300,38 @@ function [results, summary, figs] = runKalmanTrendModel(filename, params)
     summary.sellConfirmDays = params.sellConfirmDays;
     summary.transactionCost = params.transactionCost;
 
+    % Backward-compatible baseline fields.
     summary.buyCount = buyCount;
     summary.sellCount = sellCount;
     summary.tradeCount = tradeCount;
     summary.timeInMarket = timeInMarket;
-
     summary.strategyTotalReturn = totalReturnStrategy;
     summary.buyHoldTotalReturn = totalReturnBuyHold;
     summary.strategyMaxDrawdown = maxDrawdown;
     summary.buyHoldMaxDrawdown = buyHoldMaxDrawdown;
     summary.strategySharpeApprox = strategySharpeApprox;
     summary.buyHoldSharpeApprox = buyHoldSharpeApprox;
+
+    % Explicit buy-hold comparison fields.
+    summary.buyHoldBuyCount = 1;
+    summary.buyHoldSellCount = 0;
+    summary.buyHoldTradeCount = 0;
+    summary.buyHoldTimeInMarket = 1;
+    summary.buyHoldExcessReturn = 0;
+    summary.buyHoldDrawdownImprovement = 0;
+    summary.buyHoldSharpeImprovement = 0;
+
+    % Explicit baseline comparison fields.
+    summary.baselineBuyCount = buyCount;
+    summary.baselineSellCount = sellCount;
+    summary.baselineTradeCount = tradeCount;
+    summary.baselineTimeInMarket = timeInMarket;
+    summary.baselineTotalReturn = totalReturnStrategy;
+    summary.baselineMaxDrawdown = maxDrawdown;
+    summary.baselineSharpeApprox = strategySharpeApprox;
+    summary.baselineExcessReturn = baselineExcessReturn;
+    summary.baselineDrawdownImprovement = baselineDrawdownImprovement;
+    summary.baselineSharpeImprovement = baselineSharpeImprovement;
 
     %% ---------------- Print Summary ----------------
     if params.printSummary
@@ -333,16 +340,20 @@ function [results, summary, figs] = runKalmanTrendModel(filename, params)
         fprintf("Data end date:   %s\n", string(summary.endDate));
         fprintf("Number of data points: %d\n", summary.numDataPoints);
 
-        fprintf("\nBuy count: %d\n", buyCount);
-        fprintf("Sell count: %d\n", sellCount);
-        fprintf("Strategy total return: %.2f%%\n", 100*totalReturnStrategy);
-        fprintf("Buy-hold total return: %.2f%%\n", 100*totalReturnBuyHold);
-        fprintf("Strategy max drawdown: %.2f%%\n", 100*maxDrawdown);
+        fprintf("\nBuy-hold total return: %.2f%%\n", 100*totalReturnBuyHold);
         fprintf("Buy-hold max drawdown: %.2f%%\n", 100*buyHoldMaxDrawdown);
-        fprintf("Strategy Approx. Sharpe ratio: %.2f\n", strategySharpeApprox);
         fprintf("Buy-hold Approx. Sharpe ratio: %.2f\n", buyHoldSharpeApprox);
-        fprintf("Trade count: %d\n", tradeCount);
-        fprintf("Time in market: %.2f%%\n", 100*timeInMarket);
+
+        fprintf("\nBaseline buy count: %d\n", buyCount);
+        fprintf("Baseline sell count: %d\n", sellCount);
+        fprintf("Baseline trade count: %d\n", tradeCount);
+        fprintf("Baseline time in market: %.2f%%\n", 100*timeInMarket);
+        fprintf("Baseline total return: %.2f%%\n", 100*totalReturnStrategy);
+        fprintf("Baseline max drawdown: %.2f%%\n", 100*maxDrawdown);
+        fprintf("Baseline Approx. Sharpe ratio: %.2f\n", strategySharpeApprox);
+        fprintf("Baseline excess return: %.2f%%\n", 100*baselineExcessReturn);
+        fprintf("Baseline drawdown improvement: %.2f percentage points\n", 100*baselineDrawdownImprovement);
+        fprintf("Baseline Sharpe improvement: %.2f\n", baselineSharpeImprovement);
     end
 
     %% ---------------- Plots ----------------
@@ -350,28 +361,10 @@ function [results, summary, figs] = runKalmanTrendModel(filename, params)
 
     if params.makePlots
 
-        % Plot 1: Price Estimate
-        figs.priceEstimate = figure;
-        hold on; grid on;
-
-        fill([dates; flipud(dates)], ...
-             [price_low; flipud(price_high)], ...
-             [0.85 0.85 0.85], ...
-             'EdgeColor', 'none', ...
-             'FaceAlpha', 0.5);
-
-        plot(dates, price, 'k', 'LineWidth', 1.0);
-        plot(dates, price_est, 'r', 'LineWidth', 1.5);
-
-        xlabel("Date");
-        ylabel("Price");
-        title("Kalman Filter Price Estimate with Confidence Interval");
-        legend("CI", "Observed Price", "Filtered Price", "Location", "best");
-
-        % Plot 2: Buy/Sell Markers
         buyIdx = action == "Buy";
         sellIdx = action == "Sell";
 
+        % Plot 1: Buy/Sell Markers
         figs.buySellSignals = figure;
         hold on; grid on;
 
@@ -383,46 +376,10 @@ function [results, summary, figs] = runKalmanTrendModel(filename, params)
 
         xlabel("Date");
         ylabel("Price");
-        title("Kalman Trend Buy/Sell Signals");
+        title(tickerLabel + " - Kalman Trend Buy/Sell Signals");
         legend("Observed Price", "Filtered Price", "Buy", "Sell", "Location", "best");
 
-        % Plot 3: Trend Estimate
-        figs.trendEstimate = figure;
-        hold on; grid on;
-
-        fill([dates; flipud(dates)], ...
-             [trend_low; flipud(trend_high)], ...
-             [0.85 0.85 0.85], ...
-             'EdgeColor', 'none', ...
-             'FaceAlpha', 0.5);
-
-        plot(dates, trend_est, 'b', 'LineWidth', 1.5);
-        yline(0, 'k--');
-
-        xlabel("Date");
-        ylabel("Trend Estimate");
-        title("Estimated Log-Price Trend with Confidence Interval");
-        legend("CI", "Trend", "Zero Line", "Location", "best");
-
-        % Plot 4: Acceleration Estimate
-        figs.accelerationEstimate = figure;
-        hold on; grid on;
-
-        fill([dates; flipud(dates)], ...
-             [accel_low; flipud(accel_high)], ...
-             [0.85 0.85 0.85], ...
-             'EdgeColor', 'none', ...
-             'FaceAlpha', 0.5);
-
-        plot(dates, accel_est, 'm', 'LineWidth', 1.5);
-        yline(0, 'k--');
-
-        xlabel("Date");
-        ylabel("Acceleration Estimate");
-        title("Estimated Log-Price Acceleration with Confidence Interval");
-        legend("CI", "Acceleration", "Zero Line", "Location", "best");
-
-        % Plot 5: Position Signal
+        % Plot 2: Position Signal
         figs.positionSignal = figure;
         hold on; grid on;
 
@@ -436,11 +393,11 @@ function [results, summary, figs] = runKalmanTrendModel(filename, params)
         ylim([-0.1 1.1]);
 
         xlabel("Date");
-        title("Preliminary Trend-Based Position Signal");
+        title(tickerLabel + " - Baseline Position Signal");
 
         legend([hPrice, hPosition], {'Price', 'Position'}, 'Location', 'best');
 
-        % Plot 6: Strategy vs Buy-and-Hold
+        % Plot 3: Strategy vs Buy-and-Hold
         figs.strategyComparison = figure;
         hold on; grid on;
 
@@ -449,8 +406,64 @@ function [results, summary, figs] = runKalmanTrendModel(filename, params)
 
         xlabel("Date");
         ylabel("Growth of $1");
-        title("Kalman Strategy vs Buy-and-Hold");
-        legend("Buy and Hold", "Kalman Strategy", "Location", "best");
+        title(tickerLabel + " - Baseline Strategy vs Buy-and-Hold");
+        legend("Buy and Hold", "Baseline 0/1 Strategy", "Location", "best");
+
+        if params.showStatePlots
+            % Optional Plot 4: Price Estimate with CI
+            figs.priceEstimate = figure;
+            hold on; grid on;
+
+            fill([dates; flipud(dates)], ...
+                 [price_low; flipud(price_high)], ...
+                 [0.85 0.85 0.85], ...
+                 'EdgeColor', 'none', ...
+                 'FaceAlpha', 0.5);
+
+            plot(dates, price, 'k', 'LineWidth', 1.0);
+            plot(dates, price_est, 'r', 'LineWidth', 1.5);
+
+            xlabel("Date");
+            ylabel("Price");
+            title(tickerLabel + " - Kalman Filter Price Estimate with Confidence Interval");
+            legend("CI", "Observed Price", "Filtered Price", "Location", "best");
+
+            % Optional Plot 5: Trend Estimate
+            figs.trendEstimate = figure;
+            hold on; grid on;
+
+            fill([dates; flipud(dates)], ...
+                 [trend_low; flipud(trend_high)], ...
+                 [0.85 0.85 0.85], ...
+                 'EdgeColor', 'none', ...
+                 'FaceAlpha', 0.5);
+
+            plot(dates, trend_est, 'b', 'LineWidth', 1.5);
+            yline(0, 'k--');
+
+            xlabel("Date");
+            ylabel("Trend Estimate");
+            title(tickerLabel + " - Estimated Log-Price Trend with Confidence Interval");
+            legend("CI", "Trend", "Zero Line", "Location", "best");
+
+            % Optional Plot 6: Acceleration Estimate
+            figs.accelerationEstimate = figure;
+            hold on; grid on;
+
+            fill([dates; flipud(dates)], ...
+                 [accel_low; flipud(accel_high)], ...
+                 [0.85 0.85 0.85], ...
+                 'EdgeColor', 'none', ...
+                 'FaceAlpha', 0.5);
+
+            plot(dates, accel_est, 'm', 'LineWidth', 1.5);
+            yline(0, 'k--');
+
+            xlabel("Date");
+            ylabel("Acceleration Estimate");
+            title(tickerLabel + " - Estimated Log-Price Acceleration with Confidence Interval");
+            legend("CI", "Acceleration", "Zero Line", "Location", "best");
+        end
     end
 end
 
