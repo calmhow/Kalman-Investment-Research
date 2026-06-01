@@ -268,33 +268,33 @@ function [results, summary, figs] = runKalmanTrendModel_partialExposure(filename
     sellCount = sum(action == "Sell");
 
     %% ---------------- Partial Exposure Logic ----------------
-    % This branch does NOT replace the baseline position model.
-    % It creates a separate exposure vector for direct comparison.
-    %
-    % Baseline:
-    %   position = 0 or 1
-    %
-    % Partial exposure:
-    %   exposure = 0, 0.50, 0.75, or 1.00 by default
+% This branch does NOT replace the baseline position model.
+% It scales exposure only when the baseline strategy is already long.
 
-    exposure = zeros(N,1);
+exposure = zeros(N,1);
 
-    if params.runPartialExposure
-        for k = 1:N
+if params.runPartialExposure
+    for k = 1:N
+
+        if position(k) == 0
+            exposure(k) = 0.00;
+
+        else
             if trend_low(k) > 0
-                exposure(k) = params.exposureStrongTrend;
+                exposure(k) = 1.00;    % confident positive trend
             elseif trend_est(k) > 0
-                exposure(k) = params.exposurePositiveTrend;
+                exposure(k) = 0.85;    % positive but less confident
             elseif trend_high(k) > 0
-                exposure(k) = params.exposureUncertainTrend;
+                exposure(k) = 0.65;    % uncertain / weakening
             else
-                exposure(k) = params.exposureNegativeTrend;
+                exposure(k) = 0.50;    % baseline still long, but trend is weak
             end
         end
-    else
-        % If partial exposure is disabled, use baseline position as exposure.
-        exposure = position;
+
     end
+else
+    exposure = position;
+end
 
     %% ---------------- Backtest Diagnostics ----------------
     % Uses yesterday's position for today's return to avoid look-ahead bias.
