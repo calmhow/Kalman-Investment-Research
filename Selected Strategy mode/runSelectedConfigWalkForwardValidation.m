@@ -60,7 +60,7 @@ params.r_meas = modelConfig.r_meas(configIdx);
 params.buyConfirmDays = modelConfig.BuyConfirmDays(configIdx);
 params.sellConfirmDays = modelConfig.SellConfirmDays(configIdx);
 
-params.transactionCost = 0.001;
+params.transactionCost = 0.0001;
 
 jerk = sprintf("%.0e", params.q_jerk);
 meas = sprintf("%.0e", params.r_meas);

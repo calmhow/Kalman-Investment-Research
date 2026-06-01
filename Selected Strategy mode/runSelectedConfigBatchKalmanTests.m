@@ -46,9 +46,9 @@ numTickers = height(modelConfig);
 summaryRows = table();
 
 %% ---------------- Shared Non-Model Settings ----------------
-transactionCost = 0.001;
+transactionCost = 0.0010;
 
-makePlots = true;
+makePlots = false;
 showStatePlots = false;
 printSummary = false;
 

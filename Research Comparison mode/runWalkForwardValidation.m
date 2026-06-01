@@ -30,10 +30,10 @@ filename = fullfile(dataDir, ticker + ".csv");
 params = struct();
 
 params.q_jerk = 1e-7;
-params.r_meas = 1e-7;
+params.r_meas = 5e-4;
 
 params.buyConfirmDays = 5;
-params.sellConfirmDays = 7;
+params.sellConfirmDays = 8;
 
 params.transactionCost = 0.001;
 
