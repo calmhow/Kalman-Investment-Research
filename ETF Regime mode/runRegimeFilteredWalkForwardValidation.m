@@ -19,11 +19,12 @@
 clear; clc; close all;
 
 %% ---------------- User Inputs ----------------
-ticker = "SPYG";
+ticker = "QQQ";
 
 scriptDir = string(fileparts(mfilename('fullpath')));
 projectRoot = string(fileparts(scriptDir));
 dataDir = fullfile(projectRoot, "data");
+addpath(projectRoot);
 filename = fullfile(dataDir, ticker + ".csv");
 
 %% ---------------- Model Configuration Table ----------------
@@ -57,7 +58,7 @@ meas = sprintf("%.0e", params.r_meas);
 buydays = sprintf("%d", params.buyConfirmDays);
 selldays = sprintf("%d", params.sellConfirmDays);
 
-params.makePlots = true;
+params.makePlots = false;
 params.showStatePlots = false;
 params.printSummary = false;
 params.runPartialExposure = true;
@@ -193,6 +194,30 @@ end
 
 outFile = fullfile(tickerOutDir, ...
     "wf_regime_" + ticker + "_" + jerk + "_" + meas + "_" + selldays + "_" + buydays + ".xlsx");
+
+requiredRegimeColumns = [ ...
+    "RegimeRiskOffScale", ...
+    "RegimeFilteredReturnPct", ...
+    "RegimeFilteredMaxDrawdownPct", ...
+    "RegimeFilteredSharpe", ...
+    "SPYRegimeRiskOnPct", ...
+    "AverageRegimeScalePct", ...
+    "RegimeFilteredVsSelectedReturnPct", ...
+    "RegimeFilteredVsSelectedDrawdownImprovementPct", ...
+    "RegimeFilteredVsSelectedSharpeImprovement"];
+
+missingRegimeColumns = setdiff(requiredRegimeColumns, string(walkForwardSummary.Properties.VariableNames));
+
+if ~isempty(missingRegimeColumns)
+    error("Missing expected regime-filter output columns: %s", strjoin(missingRegimeColumns, ", "));
+end
+
+fprintf("\nConfirmed regime-filter walk-forward output columns are present.\n");
+
+% Force overwrite so an older workbook does not hide the new columns.
+if isfile(outFile)
+    delete(outFile);
+end
 
 writetable(walkForwardSummary, outFile);
 
@@ -382,32 +407,6 @@ function spyRiskOn = alignRegimePosition(targetDates, spyDates, spyPosition)
     if any(~tf)
         warning("%d target dates did not match SPY regime dates. Missing regime dates are treated as risk-off.", sum(~tf));
     end
-end
-
-function branch = summarizeExposureBranch(dailyReturn, exposure, transactionCost)
-
-    exposure = double(exposure(:));
-    dailyReturn = dailyReturn(:);
-
-    branchReturn = [0; exposure(1:end-1) .* dailyReturn(2:end)];
-    turnover = [0; abs(diff(exposure))];
-
-    branchReturnNet = branchReturn - transactionCost * turnover;
-    branchEquity = cumprod(1 + branchReturnNet);
-
-    branchRunningMax = cummax(branchEquity);
-    branchDrawdown = branchEquity ./ branchRunningMax - 1;
-
-    branch = struct();
-    branch.totalReturn = branchEquity(end) - 1;
-    branch.maxDrawdown = min(branchDrawdown);
-    branch.sharpe = safeSharpe(branchReturnNet);
-    branch.buyCount = sum(exposure(1:end-1) == 0 & exposure(2:end) > 0);
-    branch.sellCount = sum(exposure(1:end-1) > 0 & exposure(2:end) == 0);
-    branch.tradeCount = sum(abs(diff(exposure)) > 0);
-    branch.timeInMarket = mean(exposure > 0);
-    branch.averageExposure = mean(exposure);
-    branch.turnoverTotal = sum(turnover);
 end
 
 function returnNet = computeExposureReturnNet(dailyReturn, exposure, transactionCost)

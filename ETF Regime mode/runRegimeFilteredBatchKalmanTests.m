@@ -27,6 +27,7 @@ clear; clc; close all;
 scriptDir = string(fileparts(mfilename('fullpath')));
 projectRoot = string(fileparts(scriptDir));
 dataDir = fullfile(projectRoot, "data");
+addpath(projectRoot);
 
 %% ---------------- Model Configuration Table ----------------
 modelConfig = table( ...
@@ -37,6 +38,8 @@ modelConfig = table( ...
     [5; 5; 5], ...
     [8; 8; 8], ...
     'VariableNames', ["Ticker", "SelectedStrategy", "r_meas", "q_jerk", "BuyConfirmDays", "SellConfirmDays"]);
+
+regimeRiskOffScale =.5;
 
 %% ---------------- Shared Non-Model Settings ----------------
 transactionCost = 0.001;
@@ -161,6 +164,31 @@ if ~isfolder(batchRunsDir)
 end
 
 outFile = fullfile(batchRunsDir, "batch_regime_filtered_strategy.xlsx");
+
+requiredRegimeColumns = [ ...
+    "RegimeRiskOffScale", ...
+    "RegimeFilteredReturnPct", ...
+    "RegimeFilteredMaxDrawdownPct", ...
+    "RegimeFilteredSharpe", ...
+    "SPYRegimeRiskOnPct", ...
+    "AverageRegimeScalePct", ...
+    "RegimeFilteredVsSelectedReturnPct", ...
+    "RegimeFilteredVsSelectedDrawdownImprovementPct", ...
+    "RegimeFilteredVsSelectedSharpeImprovement"];
+
+missingRegimeColumns = setdiff(requiredRegimeColumns, string(summaryRows.Properties.VariableNames));
+
+if ~isempty(missingRegimeColumns)
+    error("Missing expected regime-filter output columns: %s", strjoin(missingRegimeColumns, ", "));
+end
+
+fprintf("\nConfirmed regime-filter batch output columns are present.\n");
+
+% Force overwrite so an older workbook does not hide the new columns.
+if isfile(outFile)
+    delete(outFile);
+end
+
 writetable(summaryRows, outFile);
 
 fprintf("\nRegime-filtered batch summary saved to: %s\n", outFile);
